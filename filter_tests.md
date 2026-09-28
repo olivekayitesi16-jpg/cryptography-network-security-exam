@@ -56,5 +56,3 @@ sudo iptables -A INPUT -p tcp -s 192.168.10.0/24 --dport 22 -d 192.168.10.100 -j
 * **Expected Outcome:** Connection timeout / Dropped
 
 * **Actual Result:** nc: connect to 192.168.10.100 port 22 (tcp) failed: Connection timed out
-# Rule 3c: Block all other inbound access to SSH (Port 22)
-sudo iptables -A INPUT -p tcp --dport 22 -j DROP
