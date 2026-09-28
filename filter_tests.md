@@ -1,77 +1,27 @@
-# Network Traffic Filtering Configuration & Execution Log
+# Network Traffic Filtering Test Record
 
-## 1. Target Topology & Environment
-* **Central Server IP:** `192.168.10.100`
-* **Staff Subnet:** `192.168.10.0/24` (Authorized for Port 80 HTTP access)
-* **Guest Subnet:** `192.168.20.0/24` (Untrusted; must be blocked)
-* **Testing Machine:** Linux Client VM (`faith-Virtual-Machine`)
+## 1. Environment & IP Mapping
+- **Server IP:** `192.168.10.100` (Service: SSH / Port 22)
+- **Staff Subnet:** `192.168.10.0/24`
+- **Guest Subnet:** `192.168.20.0/24`
+- **External IP:** `203.0.113.45`
 
----
-
-## 2. Firewall Rule Architecture (`iptables`)
-
+## 2. Firewall Rules (`iptables`)
 ```bash
-# Flush existing rules and set default-deny policy
-sudo iptables -F
-sudo iptables -P INPUT DROP
-sudo iptables -P FORWARD DROP
+# Flush existing rules
+sudo iptables -F INPUT
 
-# Allow loopback and established connections
+# Allow loopback interface
 sudo iptables -A INPUT -i lo -j ACCEPT
-sudo iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 
-# Explicitly drop all ingress traffic from Guest network
-sudo iptables -A INPUT -s 192.168.20.0/24 -j DROP
+# Allow established/related connections
+sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-# Permit HTTP access specifically for Staff network
-sudo iptables -A INPUT -s 192.168.10.0/24 -p tcp --dport 80 -j ACCEPT
+# Rule 3a: Explicitly block guest network to server
+sudo iptables -A INPUT -s 192.168.20.0/24 -d 192.168.10.100 -j DROP
 
-# Drop all remaining port 80 traffic
-sudo iptables -A INPUT -p tcp --dport 80 -j DROP
-```
----
+# Rule 3b: Permit authorized staff network access to SSH (Port 22)
+sudo iptables -A INPUT -p tcp -s 192.168.10.0/24 --dport 22 -d 192.168.10.100 -j ACCEPT
 
-
-## 3. Empirical Test Execution Log
-
-### Test 1: Permitted Access — Staff Subnet on Port 80 (HTTP)
-* **Command Executed:** 
-  ```bash
-  nc -zv -s 192.168.10.15 192.168.10.100 80
-  ```
-  
-Expected Outcome: Successful TCP three-way handshake and connection established.
-
-Actual Output:
-
-Connection to 192.168.10.100 80 port [tcp/http] succeeded!
-
-Verdict: PASS (Explicitly allowed by Staff subnet rule).
-
-### Test 2: Blocked Access 1 — Guest Subnet Isolation on Port 80
-* **Command Executed:** 
-  ```bash
-  nc -zv -w 3 -s 192.168.20.45 192.168.10.100 80
-  ```
-
-Expected Outcome: Connection request silently dropped, resulting in a timeout without response.
-
-Actual Output:
-
-nc: connect to 192.168.10.100 port 80 (tcp) timed out: Operation in progress
-
-Verdict: PASS (Blocked by -s 192.168.20.0/24 -j DROP rule).
-
-### Test 3: Blocked Access 2 — Unauthorized Service Port (SSH Port 22)
-* **Command Executed:**
-  ```bash
-  nc -zv -w 3 -s 192.168.10.15 192.168.10.100 22
-   ```
-
-Expected Outcome: Connection attempt blocked by default-deny ingress policy.
-
-Actual Output:
-
-nc: connect to 192.168.10.100 port 22 (tcp) timed out: Operation in progress
-
-Verdict: PASS (Blocked by default INPUT DROP policy).
+# Rule 3c: Block all other inbound access to SSH (Port 22)
+sudo iptables -A INPUT -p tcp --dport 22 -j DROP
