@@ -1,128 +1,97 @@
 #!/usr/bin/env python3
-"""
-ULK Polytechnic Institute - Security Toolkit
-Module: Cryptography & Network Security (ETTCS801)
-Student ID: 4202670023
-
-Description:
-A command-line utility providing AES symmetric encryption/decryption 
-(via Fernet) and SHA-256 integrity verification with error handling.
-"""
-
-import sys
 import os
-import argparse
+import sys
 import hashlib
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
-KEY_FILE = "secret.key"
+KEY_ENV_VAR = "APP_ENCRYPTION_KEY"
 
-def generate_or_load_key():
-    """Generates a new Fernet key or loads an existing key from file."""
-    if not os.path.exists(KEY_FILE):
-        key = Fernet.generate_key()
-        with open(KEY_FILE, "wb") as kf:
-            kf.write(key)
-        print(f"[+] New key generated and saved to '{KEY_FILE}'.")
-    else:
-        with open(KEY_FILE, "rb") as kf:
-            key = kf.read()
-    return key
+def load_or_get_key() -> bytes:
+    """Retrieves key from environment variable; exits securely if missing/invalid."""
+    key = os.environ.get(KEY_ENV_VAR)
+    if not key:
+        print(f"[!] Error: Environment variable '{KEY_ENV_VAR}' is not set.")
+        print(f"    Generate a key using: Fernet.generate_key().decode()")
+        print(f"    Set it via: export {KEY_ENV_VAR}='your_key_here'")
+        sys.exit(1)
+    return key.encode()
 
-def calculate_sha256(file_path):
-    """Calculates and returns the SHA-256 hash of a file."""
-    sha256_hash = hashlib.sha256()
+def calculate_sha256(file_path: str) -> str:
+    """Calculates SHA-256 hash of a file."""
+    sha256 = hashlib.sha256()
     try:
         with open(file_path, "rb") as f:
-            for byte_block in iter(lambda: f.read(4096), b""):
-                sha256_hash.update(byte_block)
-        return sha256_hash.hexdigest()
+            while chunk := f.read(8192):
+                sha256.update(chunk)
+        return sha256.hexdigest()
     except FileNotFoundError:
-        print(f"[!] Error: File '{file_path}' was not found.")
+        print(f"[!] File not found: {file_path}")
         sys.exit(1)
-
-def encrypt_file(file_path):
-    """Encrypts a plaintext file using AES (Fernet)."""
-    if not os.path.exists(file_path):
-        print(f"[!] Error: File '{file_path}' does not exist.")
-        sys.exit(1)
-
-    key = generate_or_load_key()
-    fernet = Fernet(key)
-
-    original_hash = calculate_sha256(file_path)
-    print(f"[+] Original SHA-256 Hash: {original_hash}")
-
-    with open(file_path, "rb") as f:
-        data = f.read()
-
-    encrypted_data = fernet.encrypt(data)
-    out_file = file_path + ".enc"
-
-    with open(out_file, "wb") as f:
-        f.write(encrypted_data)
-
-    print(f"[+] File encrypted successfully. Output saved to: '{out_file}'")
-
-def decrypt_file(file_path):
-    """Decrypts an encrypted (.enc) file using AES (Fernet)."""
-    if not os.path.exists(file_path):
-        print(f"[!] Error: File '{file_path}' does not exist.")
-        sys.exit(1)
-
-    key = generate_or_load_key()
-    fernet = Fernet(key)
-
-    with open(file_path, "rb") as f:
-        encrypted_data = f.read()
-
-    try:
-        decrypted_data = fernet.decrypt(encrypted_data)
     except Exception as e:
-        print(f"[!] Decryption failed: Invalid key or corrupted payload. ({e})")
+        print(f"[!] Error reading file '{file_path}': {e}")
         sys.exit(1)
 
-    out_file = file_path.replace(".enc", "")
-    if out_file == file_path:
-        out_file = "decrypted_" + file_path
+def encrypt_file(input_file: str, output_file: str, key: bytes):
+    """Encrypts input_file and saves output to output_file."""
+    try:
+        f = Fernet(key)
+        with open(input_file, "rb") as file_in:
+            data = file_in.read()
+        encrypted_data = f.encrypt(data)
+        with open(output_file, "wb") as file_out:
+            file_out.write(encrypted_data)
+        print(f"[+] File successfully encrypted: {output_file}")
+    except FileNotFoundError:
+        print(f"[!] File not found: {input_file}")
+    except Exception as e:
+        print(f"[!] Encryption failed: {e}")
 
-    with open(out_file, "wb") as f:
-        f.write(decrypted_data)
+def decrypt_file(input_file: str, output_file: str, key: bytes):
+    """Decrypts input_file and saves output to output_file."""
+    try:
+        f = Fernet(key)
+        with open(input_file, "rb") as file_in:
+            encrypted_data = file_in.read()
+        decrypted_data = f.decrypt(encrypted_data)
+        with open(output_file, "wb") as file_out:
+            file_out.write(decrypted_data)
+        print(f"[+] File successfully decrypted: {output_file}")
+    except FileNotFoundError:
+        print(f"[!] File not found: {input_file}")
+    except InvalidToken:
+        print("[!] Decryption failed: Invalid key or corrupted payload.")
+    except Exception as e:
+        print(f"[!] Decryption failed: {e}")
 
-    decrypted_hash = calculate_sha256(out_file)
-    print(f"[+] File decrypted successfully. Output saved to: '{out_file}'")
-    print(f"[+] Decrypted File SHA-256 Hash: {decrypted_hash}")
-
-def verify_file(file_path, expected_hash):
-    """Verifies file integrity by comparing current SHA-256 to expected hash."""
-    current_hash = calculate_sha256(file_path)
-    print(f"[+] Current SHA-256 Hash: {current_hash}")
-    print(f"[+] Expected SHA-256 Hash: {expected_hash}")
-
-    if current_hash.lower() == expected_hash.lower():
-        print("[+] INTEGRITY VERIFICATION: PASSED (File matches original!)")
+def verify_integrity(original_file: str, decrypted_file: str):
+    """Verifies SHA-256 match between two files."""
+    hash_orig = calculate_sha256(original_file)
+    hash_dec = calculate_sha256(decrypted_file)
+    
+    print(f"Original Hash:  {hash_orig}")
+    print(f"Decrypted Hash: {hash_dec}")
+    
+    if hash_orig == hash_dec:
+        print("[SUCCESS] File integrity verified: Hashes match.")
     else:
-        print("[!] INTEGRITY VERIFICATION: FAILED (File has been altered or tampered with!)")
-
-def main():
-    parser = argparse.ArgumentParser(description="ULK Security Toolkit - Encryption & Integrity Verification")
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--encrypt", "-e", metavar="FILE", help="Encrypt a target file")
-    group.add_argument("--decrypt", "-d", metavar="FILE", help="Decrypt a target file")
-    group.add_argument("--hash", "-H", metavar="FILE", help="Calculate SHA-256 hash of a file")
-    group.add_argument("--verify", "-v", nargs=2, metavar=("FILE", "HASH"), help="Verify file hash integrity")
-
-    args = parser.parse_args()
-
-    if args.encrypt:
-        encrypt_file(args.encrypt)
-    elif args.decrypt:
-        decrypt_file(args.decrypt)
-    elif args.hash:
-        h = calculate_sha256(args.hash)
-        print(f"[+] File SHA-256: {h}")
-    elif args.verify:
-        verify_file(args.verify[0], args.verify[1])
+        print("[ALERT] File integrity check failed: Hashes DO NOT match!")
 
 if __name__ == "__main__":
-    main()
+    key = load_or_get_key()
+    
+    # Example test usage:
+    orig = "sample_students.csv"
+    enc = "sample_students.csv.enc"
+    dec = "sample_students_decrypted.csv"
+    
+    if os.path.exists(orig):
+        print("--- 1. Encrypting File ---")
+        encrypt_file(orig, enc, key)
+        
+        print("\n--- 2. Decrypting File ---")
+        decrypt_file(enc, dec, key)
+        
+        print("\n--- 3. Integrity Check ---")
+        verify_integrity(orig, dec)
+    else:
+        print(f"[!] Please create '{orig}' to test the script execution.")
