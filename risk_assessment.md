@@ -1,4 +1,30 @@
-1. Introduction to Risk Assessment
+STEP 2: Risk Assessment
+Assets
+Asset 1
+Student records database
+Asset 2
+File transfer system
+Asset 3
+Central server
+Vulnerabilities
+Vulnerability 1
+Weak staff passwords
+Vulnerability 2
+Unencrypted file transfer
+Vulnerability 3
+Guest network access to records server
+Consequences
+Vulnerability	ConsequenceWeak Passwords	Unauthorized access
+Unencrypted Transfer	Data interception
+Guest Access	Data theft or modification
+Risk Ranking
+Risk	Likelihood	Impact	RankGuest Network Access	High	High	1
+Weak Passwords	High	Medium	2
+Unencrypted Transfer	Medium	High	3
+Recommended Controls
+Risk	ControlGuest Access	Firewall restrictions
+Weak Passwords	Strong password policy + MFA
+Unencrypted Transfer	AES file encryption
 Risk assessment is the process of:
 Identifying assets that need protection.
 Identifying vulnerabilities affecting those assets.
@@ -98,8 +124,6 @@ Impact:
 High
 Reason: Sensitive records may be stolen or altered.
 Risk Score:
-
-Plain Text
 Critical
 Show more lines
 Risk 2: Weak Passwords
@@ -126,7 +150,6 @@ Low Med High
 Likelihood High - R2 R1
 Likelihood Med - - R3
 Likelihood Low - - -
-
 R1 = Guest Network Access
 R2 = Weak Passwords
 R3 = Unencrypted Transfers
